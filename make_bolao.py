@@ -1,4 +1,96 @@
-<!DOCTYPE html>
+#!/usr/bin/env python3
+"""
+make_bolao.py  –  Gerador automático do Bolão da COATE
+======================================================
+Uso:
+  python3 make_bolao.py Bolao.xlsx           → gera bolao_coate.html
+  python3 make_bolao.py Bolao.xlsx saida.html
+
+A planilha deve ter colunas: DATA | POSIÇÃO | NOME | PONTOS
+(ordem não importa, o script detecta pelos cabeçalhos)
+
+Para adicionar rodadas: acrescente novas linhas na planilha com
+a nova data e os novos pontos. O gráfico de Evolução mostrará
+automaticamente todas as rodadas.
+"""
+import sys, json, os, re
+import openpyxl
+from datetime import datetime
+
+# ── leitura da planilha ──────────────────────────────────────────────────────
+def read_bolao(path):
+    wb = openpyxl.load_workbook(path, data_only=True)
+    ws = wb.active
+    rows = [row for row in ws.iter_rows(values_only=True) if any(c is not None for c in row)]
+
+    header_idx = None
+    for i, row in enumerate(rows):
+        vals = [str(v).strip().upper() if v is not None else '' for v in row]
+        if any(k in ' '.join(vals) for k in ['NOME','PONTOS','PTS']):
+            header_idx = i
+            break
+
+    if header_idx is None:
+        raise ValueError("Não encontrei cabeçalho com NOME/PONTOS na planilha")
+
+    header = [str(v).strip().upper() if v is not None else '' for v in rows[header_idx]]
+    date_col = next((i for i,c in enumerate(header) if 'DATA' in c), None)
+    name_col = next((i for i,c in enumerate(header) if 'NOME' in c), None)
+    pts_col  = next((i for i,c in enumerate(header) if 'PONTO' in c or 'PTS' in c), None)
+
+    if name_col is None or pts_col is None:
+        raise ValueError("Planilha precisa ter colunas NOME e PONTOS")
+
+    history = {}   # date_str -> {name: pts}
+    current_date = None
+
+    for row in rows[header_idx+1:]:
+        def safe(idx):
+            return row[idx] if idx is not None and idx < len(row) else None
+
+        name = safe(name_col)
+        pts  = safe(pts_col)
+        dval = safe(date_col)
+
+        if not name:
+            continue
+
+        if dval:
+            if isinstance(dval, datetime):
+                current_date = dval.strftime('%d/%m/%Y')
+            else:
+                s = str(dval).strip()
+                if s:
+                    current_date = s
+
+        if current_date is None:
+            current_date = datetime.now().strftime('%d/%m/%Y')
+
+        try:
+            pts_int = int(float(str(pts))) if pts is not None and str(pts).strip() != '' else 0
+        except:
+            pts_int = 0
+
+        if current_date not in history:
+            history[current_date] = {}
+        history[current_date][str(name).strip()] = pts_int
+
+    # Converte para lista ordenada de rodadas
+    def date_key(d):
+        try:
+            return datetime.strptime(d, '%d/%m/%Y')
+        except:
+            return datetime.min
+
+    rodadas = []
+    for dt in sorted(history.keys(), key=date_key):
+        players = [{'name': n, 'pts': p} for n, p in history[dt].items()]
+        rodadas.append({'date': dt, 'players': players})
+
+    return rodadas
+
+# ── template HTML ─────────────────────────────────────────────────────────────
+HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -278,122 +370,7 @@
 // ║  DADOS GERADOS AUTOMATICAMENTE — NÃO EDITE AQUI     ║
 // ║  Para atualizar: python3 make_bolao.py Bolao.xlsx   ║
 // ╚══════════════════════════════════════════════════════╝
-const HISTORY = [
-  {
-    "date": "11/06/2026",
-    "players": [
-      {
-        "name": "Mauro Bastos",
-        "pts": 10
-      },
-      {
-        "name": "Ernaldo",
-        "pts": 10
-      },
-      {
-        "name": "Johnson",
-        "pts": 10
-      },
-      {
-        "name": "Frutuoso Junior",
-        "pts": 7
-      },
-      {
-        "name": "Drica Veras",
-        "pts": 7
-      },
-      {
-        "name": "Marlio Lima",
-        "pts": 7
-      },
-      {
-        "name": "Nonato Laion",
-        "pts": 7
-      },
-      {
-        "name": "TMF93",
-        "pts": 6
-      },
-      {
-        "name": "Mauricio Hexa",
-        "pts": 6
-      },
-      {
-        "name": "PorDeus",
-        "pts": 5
-      },
-      {
-        "name": "Fertr",
-        "pts": 5
-      },
-      {
-        "name": "Danisgou",
-        "pts": 0
-      },
-      {
-        "name": "Wilton Bessa",
-        "pts": 0
-      }
-    ]
-  },
-  {
-    "date": "12/06/2026",
-    "players": [
-      {
-        "name": "Mauro Bastos",
-        "pts": 17
-      },
-      {
-        "name": "Drica Veras",
-        "pts": 17
-      },
-      {
-        "name": "Ernaldo",
-        "pts": 14
-      },
-      {
-        "name": "Johnson",
-        "pts": 14
-      },
-      {
-        "name": "TMF93",
-        "pts": 11
-      },
-      {
-        "name": "Mauricio Hexa",
-        "pts": 7
-      },
-      {
-        "name": "Marlio Lima",
-        "pts": 9
-      },
-      {
-        "name": "Fertr",
-        "pts": 9
-      },
-      {
-        "name": "Frutuoso Junior",
-        "pts": 8
-      },
-      {
-        "name": "Nonato Laion",
-        "pts": 8
-      },
-      {
-        "name": "PorDeus",
-        "pts": 6
-      },
-      {
-        "name": "Wilton Bessa",
-        "pts": 4
-      },
-      {
-        "name": "Danisgou",
-        "pts": 1
-      }
-    ]
-  }
-];
+const HISTORY = __HISTORY_JSON__;
 
 // ── cores por participante ──────────────────────────────
 const PALETTE = [
@@ -870,3 +847,21 @@ window.addEventListener('load',()=>setTimeout(spawnConfetti,400));
 </script>
 </body>
 </html>
+"""
+
+def generate(xlsx_path, out_path=None):
+    rodadas = read_bolao(xlsx_path)
+    history_json = json.dumps(rodadas, ensure_ascii=False, indent=2)
+    html = HTML_TEMPLATE.replace('__HISTORY_JSON__', history_json)
+    if out_path is None:
+        base = os.path.splitext(os.path.basename(xlsx_path))[0]
+        out_path = f"bolao_coate.html"
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write(html)
+    print(f"✅ Gerado: {out_path} ({len(rodadas)} rodada(s), {len(rodadas[-1]['players'])} participantes)")
+    return out_path
+
+if __name__ == '__main__':
+    xlsx = sys.argv[1] if len(sys.argv) > 1 else 'Bolao.xlsx'
+    out  = sys.argv[2] if len(sys.argv) > 2 else None
+    generate(xlsx, out)
